@@ -14,9 +14,9 @@ class KuramotoOscillatorTest(unittest.TestCase):
 
         derivatives = osc.derivatives()
 
-        # Expected:
-        # dθ0/dt = 1.0 + (2/2) * sin(pi/2 - 0) = 2.0
-        # dθ1/dt = 1.5 + (2/2) * sin(0 - pi/2) = 0.5
+        # Expected with self terms included (sin(0) = 0):
+        # dtheta0/dt = 1.0 + (2/2) * [sin(0 - 0) + sin(pi/2 - 0)] = 1.0 + 1 * (0 + 1) = 2.0
+        # dtheta1/dt = 1.5 + (2/2) * [sin(0 - pi/2) + sin(pi/2 - pi/2)] = 1.5 + 1 * (-1 + 0) = 0.5
         self.assertAlmostEqual(derivatives[0], 2.0, places=6)
         self.assertAlmostEqual(derivatives[1], 0.5, places=6)
 

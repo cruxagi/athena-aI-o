@@ -13,6 +13,8 @@ class KuramotoOscillator:
         ωᵢ: natural frequency of oscillator i
         K:  coupling constant
         N:  number of oscillators
+
+    This implementation uses the direct O(N²) formulation for clarity and fidelity to the model.
     """
 
     natural_frequencies: Sequence[float]
@@ -31,24 +33,24 @@ class KuramotoOscillator:
         else:
             self.phases = [float(theta) for theta in self.phases]
 
-        self.natural_frequencies = [float(w) for w in self.natural_frequencies]
+        self.natural_frequencies = tuple(float(w) for w in self.natural_frequencies)
 
     def derivatives(self) -> List[float]:
         """Compute dθᵢ/dt for each oscillator."""
         derivatives: List[float] = []
         for i, theta_i in enumerate(self.phases):
-            coupling_term = sum(
-                math.sin(theta_j - theta_i) for theta_j in self.phases
-            )
+            # Self term sin(theta_i - theta_i) contributes zero.
+            # Keeping the full O(N²) sum mirrors the standard K/N formulation and simplifies the implementation.
+            coupling_term = sum(math.sin(theta_j - theta_i) for theta_j in self.phases)
             dtheta_dt = self.natural_frequencies[i] + (self.coupling / self._count) * coupling_term
             derivatives.append(dtheta_dt)
         return derivatives
 
-    def step(self, dt: float) -> List[float]:
-        """Advance the phases by a single Euler step of duration dt."""
+    def step(self, dt: float) -> None:
+        """Advance the phases in place by a single Euler step of duration dt, wrapping results into [0, 2π)."""
         updates = self.derivatives()
-        self.phases = [
+        updated_phases = [
             (theta + dtheta_dt * dt) % (2 * math.pi)
             for theta, dtheta_dt in zip(self.phases, updates)
         ]
-        return self.phases
+        self.phases[:] = updated_phases
