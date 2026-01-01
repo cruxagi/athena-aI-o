@@ -72,7 +72,7 @@ class RouterTopologyAnalyzerTest(unittest.TestCase):
         self.assertIn("test-router", analyzer.components)
         self.assertEqual(analyzer.components["test-router"]["exit_points"], 10)
         self.assertEqual(analyzer.components["test-router"]["singletons"], 3)
-        # frequency = (exit_points + singletons * 2) * weight = (10 + 6) * 1.0 = 16
+        # frequency = (exit_points + singletons * 2) * weight = (10 + 3*2) * 1.0 = 16
         self.assertAlmostEqual(analyzer.components["test-router"]["frequency"], 16.0, places=6)
 
     def test_critical_coupling_formula(self) -> None:

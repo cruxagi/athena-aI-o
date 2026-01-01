@@ -151,7 +151,13 @@ class RouterTopologyAnalyzer:
         if n == 0:
             return 0.0
         
-        std = max((sum((f - sum(frequencies)/n)**2 for f in frequencies) / n) ** 0.5, 0.1)
+        # Compute standard deviation
+        mean_freq = sum(frequencies) / n
+        variance = sum((f - mean_freq) ** 2 for f in frequencies) / n
+        std = max(variance ** 0.5, 0.1)  # Floor at 0.1 to avoid division issues
+        
+        # Silverman's rule of thumb for Gaussian kernel bandwidth selection:
+        # h = 1.06 * σ * n^(-1/5)
         bandwidth = 1.06 * std * (n ** -0.2)
         
         density = 0.0
@@ -297,12 +303,14 @@ class RouterTopologyAnalyzer:
             max_freq = max(frequencies)
             avg_freq = sum(frequencies) / len(frequencies)
             if max_freq > avg_freq * 3:
-                outlier = [n for n, c in self.components.items() if c["frequency"] == max_freq][0]
+                # Find all components with maximum frequency (handles ties)
+                outliers = [n for n, c in self.components.items() if c["frequency"] == max_freq]
+                outlier_str = ", ".join(outliers)
                 recommendations.append({
-                    "intervention": f"Decompose High-Frequency Component: {outlier}",
+                    "intervention": f"Decompose High-Frequency Component: {outlier_str}",
                     "expected_delta_r": "+40%",
                     "effort": "7",
-                    "rationale": f"Component '{outlier}' is an outlier (ω={max_freq:.2f} vs avg={avg_freq:.2f}). Breaking it down normalizes frequency distribution.",
+                    "rationale": f"Component(s) '{outlier_str}' are outliers (ω={max_freq:.2f} vs avg={avg_freq:.2f}). Breaking them down normalizes frequency distribution.",
                 })
         
         return recommendations
