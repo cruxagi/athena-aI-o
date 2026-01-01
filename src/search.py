@@ -4,15 +4,32 @@ Athena Search Module - Quantum-coherent search across local LLMs and the open we
 
 import hashlib
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
 
 
 class SearchSource(Enum):
     LOCAL_LLM = "local_llm"
     WEB = "web"
     CACHE = "cache"
+
+
+@dataclass
+class SearchConfig:
+    """Configuration for search operations - groups related parameters."""
+    max_results: int = 10
+    use_cache: bool = True
+    cache_ttl: int = 3600
+    timeout: float = 30.0
+    retry_count: int = 3
+    privacy_mode: bool = True
+    score_threshold: float = 0.5
+    dedup: bool = True
+    combine_strategy: str = "weighted"
+    local_models: List[str] = field(default_factory=lambda: ["default"])
+    web_endpoints: List[str] = field(default_factory=lambda: ["https://api.search.default/v1"])
+    result_filter: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -23,183 +40,275 @@ class SearchResult:
     metadata: Dict[str, Any]
 
 
-def execute_search(query: str, sources: List[str], max_results: int = 10,
-                   use_cache: bool = True, cache_ttl: int = 3600,
-                   timeout: float = 30.0, retry_count: int = 3,
-                   privacy_mode: bool = True, local_models: Optional[List[str]] = None,
-                   web_endpoints: Optional[List[str]] = None,
-                   result_filter: Optional[Dict[str, Any]] = None,
-                   score_threshold: float = 0.5, dedup: bool = True,
-                   combine_strategy: str = "weighted") -> Dict[str, Any]:
+def execute_search(
+    query: str,
+    sources: List[str],
+    config: Optional[SearchConfig] = None
+) -> Dict[str, Any]:
     """
     Execute a quantum-coherent search across multiple sources.
-    This function is overly complex and handles too many concerns.
+
+    Args:
+        query: The search query string
+        sources: List of sources to search (e.g., ["local_llm", "web", "cache"])
+        config: Search configuration options (uses defaults if not provided)
+
+    Returns:
+        Dictionary with 'results' list and 'metadata' about the search
     """
-    results = []
-    errors = []
-    cache_hits = 0
-    cache_misses = 0
+    config = config or SearchConfig()
     start_time = time.time()
+    errors: List[Dict[str, Any]] = []
 
-    # Generate cache key
-    cache_key = None
-    if use_cache:
-        cache_data = f"{query}:{':'.join(sorted(sources))}:{max_results}:{score_threshold}"
-        cache_key = hashlib.sha256(cache_data.encode()).hexdigest()
+    # Check cache first
+    cache_key = _generate_cache_key(query, sources, config)
+    cached_response = _try_get_cached(cache_key, config, start_time)
+    if cached_response:
+        return cached_response
 
-        # Check if result exists in cache and is not expired
-        cached = _get_from_cache(cache_key)
-        if cached is not None:
-            cache_time = cached.get("timestamp", 0)
-            if time.time() - cache_time < cache_ttl:
-                cache_hits += 1
-                cached_results = cached.get("results", [])
-                # Apply current filters to cached results
-                if result_filter:
-                    filtered_cached = []
-                    for r in cached_results:
-                        include = True
-                        for filter_key, filter_value in result_filter.items():
-                            if filter_key in r.get("metadata", {}):
-                                if isinstance(filter_value, list):
-                                    if r["metadata"][filter_key] not in filter_value:
-                                        include = False
-                                        break
-                                else:
-                                    if r["metadata"][filter_key] != filter_value:
-                                        include = False
-                                        break
-                        if include:
-                            filtered_cached.append(r)
-                    cached_results = filtered_cached
-                return {
-                    "results": cached_results[:max_results],
-                    "metadata": {
-                        "cache_hit": True,
-                        "duration_ms": (time.time() - start_time) * 1000,
-                        "sources_queried": [],
-                        "errors": []
-                    }
-                }
-            else:
-                cache_misses += 1
-        else:
-            cache_misses += 1
+    # Query all sources and collect results
+    raw_results = _query_all_sources(query, sources, config, errors)
 
-    # Process each source
+    # Process results: filter, deduplicate, and sort
+    processed_results = _process_results(raw_results, config)
+
+    # Cache and return final results
+    final_results = processed_results[:config.max_results]
+    _cache_results(cache_key, final_results, config)
+
+    return {
+        "results": final_results,
+        "metadata": {
+            "cache_hit": False,
+            "duration_ms": (time.time() - start_time) * 1000,
+            "sources_queried": sources,
+            "total_raw_results": len(raw_results),
+            "errors": errors
+        }
+    }
+
+
+# -----------------------------------------------------------------------------
+# Cache Operations
+# -----------------------------------------------------------------------------
+
+def _generate_cache_key(query: str, sources: List[str], config: SearchConfig) -> str:
+    """Generate a unique cache key for the search parameters."""
+    cache_data = f"{query}:{':'.join(sorted(sources))}:{config.max_results}:{config.score_threshold}"
+    return hashlib.sha256(cache_data.encode()).hexdigest()
+
+
+def _try_get_cached(
+    cache_key: str,
+    config: SearchConfig,
+    start_time: float
+) -> Optional[Dict[str, Any]]:
+    """Attempt to retrieve valid cached results. Returns None if cache miss."""
+    if not config.use_cache:
+        return None
+
+    cached = _get_from_cache(cache_key)
+    if cached is None:
+        return None
+
+    cache_time = cached.get("timestamp", 0)
+    if time.time() - cache_time >= config.cache_ttl:
+        return None
+
+    results = _apply_filters(cached.get("results", []), config.result_filter)
+    return {
+        "results": results[:config.max_results],
+        "metadata": {
+            "cache_hit": True,
+            "duration_ms": (time.time() - start_time) * 1000,
+            "sources_queried": [],
+            "errors": []
+        }
+    }
+
+
+def _cache_results(cache_key: str, results: List[Dict], config: SearchConfig) -> None:
+    """Store results in cache if caching is enabled."""
+    if config.use_cache:
+        _store_in_cache(cache_key, {"results": results, "timestamp": time.time()})
+
+
+# -----------------------------------------------------------------------------
+# Source Querying
+# -----------------------------------------------------------------------------
+
+def _query_all_sources(
+    query: str,
+    sources: List[str],
+    config: SearchConfig,
+    errors: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Query all requested sources and aggregate results."""
+    results: List[Dict[str, Any]] = []
+
+    source_handlers = {
+        "local_llm": _query_local_llm_source,
+        SearchSource.LOCAL_LLM.value: _query_local_llm_source,
+        "web": _query_web_source,
+        SearchSource.WEB.value: _query_web_source,
+        "cache": _query_cache_source,
+        SearchSource.CACHE.value: _query_cache_source,
+    }
+
     for source in sources:
-        source_results = []
-        if source == "local_llm" or source == SearchSource.LOCAL_LLM.value:
-            if local_models is None:
-                local_models = ["default"]
-            for model in local_models:
-                attempt = 0
-                success = False
-                while attempt < retry_count and not success:
-                    try:
-                        if privacy_mode:
-                            sanitized_query = _sanitize_for_privacy(query)
-                            model_results = _query_local_llm(sanitized_query, model, timeout)
-                        else:
-                            model_results = _query_local_llm(query, model, timeout)
-                        for r in model_results:
-                            if r.get("score", 0) >= score_threshold:
-                                r["source"] = SearchSource.LOCAL_LLM.value
-                                r["model"] = model
-                                source_results.append(r)
-                        success = True
-                    except TimeoutError as e:
-                        attempt += 1
-                        if attempt >= retry_count:
-                            errors.append({"source": source, "model": model, "error": str(e), "type": "timeout"})
-                    except Exception as e:
-                        attempt += 1
-                        if attempt >= retry_count:
-                            errors.append({"source": source, "model": model, "error": str(e), "type": "unknown"})
-        elif source == "web" or source == SearchSource.WEB.value:
-            if privacy_mode:
-                # Don't send to web in privacy mode unless explicitly allowed
-                if not _check_privacy_allowlist(query):
-                    errors.append({"source": source, "error": "Query blocked by privacy mode", "type": "privacy"})
-                    continue
-            if web_endpoints is None:
-                web_endpoints = ["https://api.search.default/v1"]
-            for endpoint in web_endpoints:
-                attempt = 0
-                success = False
-                while attempt < retry_count and not success:
-                    try:
-                        if privacy_mode:
-                            sanitized_query = _anonymize_query(query)
-                            web_results = _query_web_endpoint(sanitized_query, endpoint, timeout)
-                        else:
-                            web_results = _query_web_endpoint(query, endpoint, timeout)
-                        for r in web_results:
-                            if r.get("score", 0) >= score_threshold:
-                                r["source"] = SearchSource.WEB.value
-                                r["endpoint"] = endpoint
-                                source_results.append(r)
-                        success = True
-                    except TimeoutError as e:
-                        attempt += 1
-                        if attempt >= retry_count:
-                            errors.append({"source": source, "endpoint": endpoint, "error": str(e), "type": "timeout"})
-                    except ConnectionError as e:
-                        attempt += 1
-                        if attempt >= retry_count:
-                            errors.append({"source": source, "endpoint": endpoint, "error": str(e), "type": "connection"})
-                    except Exception as e:
-                        attempt += 1
-                        if attempt >= retry_count:
-                            errors.append({"source": source, "endpoint": endpoint, "error": str(e), "type": "unknown"})
-        elif source == "cache" or source == SearchSource.CACHE.value:
-            # Search in local cache
-            try:
-                cache_results = _search_cache(query, max_results * 2)
-                for r in cache_results:
-                    if r.get("score", 0) >= score_threshold:
-                        r["source"] = SearchSource.CACHE.value
-                        source_results.append(r)
-            except Exception as e:
-                errors.append({"source": source, "error": str(e), "type": "cache_error"})
+        handler = source_handlers.get(source)
+        if handler:
+            source_results = handler(query, config, errors)
+            results.extend(source_results)
         else:
-            errors.append({"source": source, "error": f"Unknown source: {source}", "type": "invalid_source"})
-            continue
+            errors.append({
+                "source": source,
+                "error": f"Unknown source: {source}",
+                "type": "invalid_source"
+            })
 
-        # Apply filters to source results
-        if result_filter:
-            filtered_source = []
-            for r in source_results:
-                include = True
-                for filter_key, filter_value in result_filter.items():
-                    if filter_key in r.get("metadata", {}):
-                        if isinstance(filter_value, list):
-                            if r["metadata"][filter_key] not in filter_value:
-                                include = False
-                                break
-                        else:
-                            if r["metadata"][filter_key] != filter_value:
-                                include = False
-                                break
-                if include:
-                    filtered_source.append(r)
-            source_results = filtered_source
+    return results
 
-        results.extend(source_results)
 
-    # Deduplicate results
-    if dedup:
-        seen_hashes = set()
-        deduped_results = []
-        for r in results:
-            content_hash = hashlib.md5(r.get("content", "").encode()).hexdigest()
-            if content_hash not in seen_hashes:
-                seen_hashes.add(content_hash)
-                deduped_results.append(r)
-        results = deduped_results
+def _query_local_llm_source(
+    query: str,
+    config: SearchConfig,
+    errors: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Query local LLM models with retry support."""
+    results: List[Dict[str, Any]] = []
+    search_query = _sanitize_for_privacy(query) if config.privacy_mode else query
 
-    # Combine and sort results based on strategy
-    if combine_strategy == "weighted":
+    for model in config.local_models:
+        model_results = _with_retry(
+            func=lambda: _query_local_llm(search_query, model, config.timeout),
+            retry_count=config.retry_count,
+            on_error=lambda e: errors.append({
+                "source": "local_llm",
+                "model": model,
+                "error": str(e),
+                "type": _get_error_type(e)
+            })
+        )
+
+        for r in (model_results or []):
+            if r.get("score", 0) >= config.score_threshold:
+                r["source"] = SearchSource.LOCAL_LLM.value
+                r["model"] = model
+                results.append(r)
+
+    return results
+
+
+def _query_web_source(
+    query: str,
+    config: SearchConfig,
+    errors: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Query web endpoints with privacy checks and retry support."""
+    if config.privacy_mode and not _check_privacy_allowlist(query):
+        errors.append({
+            "source": "web",
+            "error": "Query blocked by privacy mode",
+            "type": "privacy"
+        })
+        return []
+
+    results: List[Dict[str, Any]] = []
+    search_query = _anonymize_query(query) if config.privacy_mode else query
+
+    for endpoint in config.web_endpoints:
+        endpoint_results = _with_retry(
+            func=lambda: _query_web_endpoint(search_query, endpoint, config.timeout),
+            retry_count=config.retry_count,
+            on_error=lambda e: errors.append({
+                "source": "web",
+                "endpoint": endpoint,
+                "error": str(e),
+                "type": _get_error_type(e)
+            })
+        )
+
+        for r in (endpoint_results or []):
+            if r.get("score", 0) >= config.score_threshold:
+                r["source"] = SearchSource.WEB.value
+                r["endpoint"] = endpoint
+                results.append(r)
+
+    return results
+
+
+def _query_cache_source(
+    query: str,
+    config: SearchConfig,
+    errors: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Search the local cache for matching results."""
+    try:
+        cache_results = _search_cache(query, config.max_results * 2)
+        return [
+            {**r, "source": SearchSource.CACHE.value}
+            for r in cache_results
+            if r.get("score", 0) >= config.score_threshold
+        ]
+    except Exception as e:
+        errors.append({"source": "cache", "error": str(e), "type": "cache_error"})
+        return []
+
+
+# -----------------------------------------------------------------------------
+# Result Processing
+# -----------------------------------------------------------------------------
+
+def _process_results(results: List[Dict], config: SearchConfig) -> List[Dict]:
+    """Apply filters, deduplication, and sorting to results."""
+    processed = _apply_filters(results, config.result_filter)
+
+    if config.dedup:
+        processed = _deduplicate(processed)
+
+    return _sort_results(processed, config.combine_strategy)
+
+
+def _apply_filters(
+    results: List[Dict[str, Any]],
+    result_filter: Optional[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Filter results based on metadata criteria."""
+    if not result_filter:
+        return results
+
+    def matches_filter(result: Dict[str, Any]) -> bool:
+        metadata = result.get("metadata", {})
+        for key, value in result_filter.items():
+            if key not in metadata:
+                continue
+            actual = metadata[key]
+            expected_values = value if isinstance(value, list) else [value]
+            if actual not in expected_values:
+                return False
+        return True
+
+    return [r for r in results if matches_filter(r)]
+
+
+def _deduplicate(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Remove duplicate results based on content hash."""
+    seen: set = set()
+    unique: List[Dict[str, Any]] = []
+
+    for result in results:
+        content_hash = hashlib.md5(result.get("content", "").encode()).hexdigest()
+        if content_hash not in seen:
+            seen.add(content_hash)
+            unique.append(result)
+
+    return unique
+
+
+def _sort_results(results: List[Dict[str, Any]], strategy: str) -> List[Dict[str, Any]]:
+    """Sort results according to the specified strategy."""
+    if strategy == "weighted":
         source_weights = {
             SearchSource.LOCAL_LLM.value: 1.2,
             SearchSource.WEB.value: 1.0,
@@ -208,63 +317,81 @@ def execute_search(query: str, sources: List[str], max_results: int = 10,
         for r in results:
             weight = source_weights.get(r.get("source"), 1.0)
             r["weighted_score"] = r.get("score", 0) * weight
-        results.sort(key=lambda x: x.get("weighted_score", 0), reverse=True)
-    elif combine_strategy == "score":
-        results.sort(key=lambda x: x.get("score", 0), reverse=True)
-    elif combine_strategy == "recency":
-        results.sort(key=lambda x: x.get("metadata", {}).get("timestamp", 0), reverse=True)
-    else:
-        results.sort(key=lambda x: x.get("score", 0), reverse=True)
+        return sorted(results, key=lambda x: x.get("weighted_score", 0), reverse=True)
 
-    # Limit results
-    final_results = results[:max_results]
+    if strategy == "recency":
+        return sorted(
+            results,
+            key=lambda x: x.get("metadata", {}).get("timestamp", 0),
+            reverse=True
+        )
 
-    # Store in cache if enabled
-    if use_cache and cache_key:
-        _store_in_cache(cache_key, {
-            "results": final_results,
-            "timestamp": time.time()
-        })
-
-    duration_ms = (time.time() - start_time) * 1000
-
-    return {
-        "results": final_results,
-        "metadata": {
-            "cache_hit": False,
-            "cache_hits": cache_hits,
-            "cache_misses": cache_misses,
-            "duration_ms": duration_ms,
-            "sources_queried": sources,
-            "total_raw_results": len(results),
-            "errors": errors
-        }
-    }
+    # Default: sort by score
+    return sorted(results, key=lambda x: x.get("score", 0), reverse=True)
 
 
-# Stub implementations for external dependencies
+# -----------------------------------------------------------------------------
+# Utilities
+# -----------------------------------------------------------------------------
+
+def _with_retry(
+    func: Callable,
+    retry_count: int,
+    on_error: Callable[[Exception], None]
+) -> Optional[List[Dict[str, Any]]]:
+    """Execute a function with retry logic. Returns None on complete failure."""
+    for attempt in range(retry_count):
+        try:
+            return func()
+        except Exception as e:
+            if attempt == retry_count - 1:
+                on_error(e)
+    return None
+
+
+def _get_error_type(error: Exception) -> str:
+    """Determine error type from exception."""
+    if isinstance(error, TimeoutError):
+        return "timeout"
+    if isinstance(error, ConnectionError):
+        return "connection"
+    return "unknown"
+
+
+# -----------------------------------------------------------------------------
+# External Dependencies (stubs)
+# -----------------------------------------------------------------------------
+
 _cache_store: Dict[str, Any] = {}
+
 
 def _get_from_cache(key: str) -> Optional[Dict[str, Any]]:
     return _cache_store.get(key)
 
+
 def _store_in_cache(key: str, data: Dict[str, Any]) -> None:
     _cache_store[key] = data
+
 
 def _search_cache(query: str, limit: int) -> List[Dict[str, Any]]:
     return []
 
+
 def _sanitize_for_privacy(query: str) -> str:
     return query
+
 
 def _anonymize_query(query: str) -> str:
     return query
 
+
 def _check_privacy_allowlist(query: str) -> bool:
     return True
 
+
 def _query_local_llm(query: str, model: str, timeout: float) -> List[Dict[str, Any]]:
     return []
+
 
 def _query_web_endpoint(query: str, endpoint: str, timeout: float) -> List[Dict[str, Any]]:
     return []
