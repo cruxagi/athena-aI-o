@@ -31,10 +31,12 @@ class Oscillator:
 class OrganismController:
     """Implements the Sense→Decide→Act→Learn→Report loop for the organism."""
 
-    def __init__(self, coupling: float = 1.0, token_budget: int = 10_000) -> None:
+    def __init__(
+        self, coupling: float = 1.0, token_budget: int = 10_000, meta_goals: Iterable[str] | None = None
+    ) -> None:
         self.coupling = coupling
         self.token_budget = token_budget
-        self.meta_goals = ["stability", "coherence", "safety"]
+        self.meta_goals = list(meta_goals) if meta_goals is not None else ["stability", "coherence", "safety"]
         self._rng = random.Random(42)
         self.oscillators = self._init_oscillators()
 

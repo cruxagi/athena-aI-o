@@ -87,7 +87,10 @@ class SafeEvaluator(ast.NodeVisitor):
 
 
 def _safe_eval(expr: str, scope: Dict[str, Any]) -> Any:
-    return SafeEvaluator(scope).eval(expr)
+    value = SafeEvaluator(scope).eval(expr)
+    if not isinstance(value, (int, float)):
+        raise ValueError("Expression must be numeric")
+    return float(value)
 
 
 class ResonanceController:
@@ -145,16 +148,16 @@ class ResonanceController:
         if "+=" in stmt:
             name, expr = stmt.split("+=", 1)
             name = name.strip()
-            scope[name] = scope.get(name, 0.0) + float(_safe_eval(expr.strip(), scope))
+            scope[name] = scope.get(name, 0.0) + _safe_eval(expr.strip(), scope)
             return
         if "-=" in stmt:
             name, expr = stmt.split("-=", 1)
             name = name.strip()
-            scope[name] = scope.get(name, 0.0) - float(_safe_eval(expr.strip(), scope))
+            scope[name] = scope.get(name, 0.0) - _safe_eval(expr.strip(), scope)
             return
         if "=" in stmt:
             name, expr = stmt.split("=", 1)
-            scope[name.strip()] = float(_safe_eval(expr.strip(), scope))
+            scope[name.strip()] = _safe_eval(expr.strip(), scope)
 
     def run(self, program: str, scope: Dict[str, Any]) -> Dict[str, Any]:
         if not program.strip():

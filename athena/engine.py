@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping
 
@@ -61,7 +62,7 @@ class AIOEngine:
             "tok": budgets["tok"],
         }
         scope = self.resonance.run(resonance_program, scope)
-        payload = str(scope)
+        payload = json.dumps(scope, sort_keys=True)
         compression_report = self.compression.project(payload, organism_report.coherence)
         return EngineReport(
             organism=organism_report,
