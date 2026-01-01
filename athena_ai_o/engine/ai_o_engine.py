@@ -8,7 +8,7 @@ and improve itself based on consciousness and synchronization metrics.
 import ast
 import sys
 import traceback
-from typing import Dict, List, Optional, Any, Callable
+from typing import Dict, List, Optional, Any, Callable, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 import logging
@@ -89,7 +89,7 @@ class AIOEngine:
             'round': round,
         }
         
-    def validate_code(self, code: str) -> tuple[bool, Optional[str]]:
+    def validate_code(self, code: str) -> Tuple[bool, Optional[str]]:
         """
         Validate Python code for syntax and safety.
         
