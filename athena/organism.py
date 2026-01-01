@@ -2,7 +2,7 @@ import cmath
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from .phases import PhaseState, phase_from_coherence
 
@@ -32,7 +32,7 @@ class OrganismController:
     """Implements the Sense→Decide→Act→Learn→Report loop for the organism."""
 
     def __init__(
-        self, coupling: float = 1.0, token_budget: int = 10_000, meta_goals: Iterable[str] | None = None
+        self, coupling: float = 1.0, token_budget: int = 10_000, meta_goals: Optional[Iterable[str]] = None
     ) -> None:
         self.coupling = coupling
         self.token_budget = token_budget

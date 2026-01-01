@@ -25,7 +25,21 @@ class CompressionSystem:
         return 0.0 if baseline == 0 else max(0.0, min(1.0, 1 - (value / baseline)))
 
     def stenographic(self, payload: str) -> float:
-        return self._ratio(len(payload.encode()), max(1, len(payload)))
+        data = payload.encode()
+        if not data:
+            return 0.0
+        compressed = 0
+        last = data[0]
+        count = 1
+        for b in data[1:]:
+            if b == last:
+                count += 1
+            else:
+                compressed += 1 + len(str(count))
+                last = b
+                count = 1
+        compressed += 1 + len(str(count))
+        return self._ratio(compressed, len(data))
 
     def delta_compress(self, payload: str) -> float:
         delta = sum(1 for a, b in zip(payload, self.last_payload) if a != b) + abs(

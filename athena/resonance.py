@@ -87,10 +87,25 @@ class SafeEvaluator(ast.NodeVisitor):
 
 
 def _safe_eval(expr: str, scope: Dict[str, Any]) -> Any:
-    value = SafeEvaluator(scope).eval(expr)
+    return SafeEvaluator(scope).eval(expr)
+
+
+def _safe_number(expr: str, scope: Dict[str, Any]) -> float:
+    value = _safe_eval(expr, scope)
+    if isinstance(value, bool):
+        return float(value)
     if not isinstance(value, (int, float)):
         raise ValueError("Expression must be numeric")
     return float(value)
+
+
+def _safe_condition(expr: str, scope: Dict[str, Any]) -> bool:
+    value = _safe_eval(expr, scope)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    raise ValueError("Expression must be boolean-compatible")
 
 
 class ResonanceController:
@@ -131,7 +146,7 @@ class ResonanceController:
             kind = entry[0]
             if kind == "if":
                 _, condition, true_body, false_body = entry
-                branch = true_body if _safe_eval(condition, scope) else false_body
+                branch = true_body if _safe_condition(condition, scope) else false_body
                 self._exec_block(branch, scope)
                 continue
             _, stmt = entry
@@ -148,16 +163,16 @@ class ResonanceController:
         if "+=" in stmt:
             name, expr = stmt.split("+=", 1)
             name = name.strip()
-            scope[name] = scope.get(name, 0.0) + _safe_eval(expr.strip(), scope)
+            scope[name] = scope.get(name, 0.0) + _safe_number(expr.strip(), scope)
             return
         if "-=" in stmt:
             name, expr = stmt.split("-=", 1)
             name = name.strip()
-            scope[name] = scope.get(name, 0.0) - _safe_eval(expr.strip(), scope)
+            scope[name] = scope.get(name, 0.0) - _safe_number(expr.strip(), scope)
             return
         if "=" in stmt:
             name, expr = stmt.split("=", 1)
-            scope[name.strip()] = _safe_eval(expr.strip(), scope)
+            scope[name.strip()] = _safe_number(expr.strip(), scope)
 
     def run(self, program: str, scope: Dict[str, Any]) -> Dict[str, Any]:
         if not program.strip():
