@@ -1,7 +1,8 @@
 import hashlib
 import math
 import random
-from typing import Dict, Iterable, List, Optional, Tuple
+
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 
 class KuramotoSubstrate:
@@ -74,7 +75,7 @@ class BehaviorLibrary:
         best_name: Optional[str] = None
         best_score = float("-inf")
         for name, pattern in self.behaviors.items():
-            if not pattern:
+            if len(pattern) == 0:
                 continue
             score = self._phase_alignment_score(phases, pattern)
             if score > best_score:
@@ -88,7 +89,11 @@ class BehaviorLibrary:
         limit = min(len(phases), len(pattern))
         if limit == 0:
             return float("-inf")
-        diffs = [abs((phases[i] - pattern[i]) % (2 * math.pi)) for i in range(limit)]
+        diffs = []
+        for i in range(limit):
+            diff = (phases[i] - pattern[i]) % (2 * math.pi)
+            shortest = min(diff, 2 * math.pi - diff)
+            diffs.append(shortest)
         normalized = [math.cos(diff) for diff in diffs]
         return sum(normalized) / limit
 
@@ -130,7 +135,7 @@ class SBLMEngine:
         self.library = library or BehaviorLibrary.with_defaults(self.substrate.num_oscillators)
         self.metric = OmegaMetric(self.substrate)
 
-    def process(self, query: str, dt: float = 0.05, steps: int = 5) -> Dict[str, float]:
+    def process(self, query: str, dt: float = 0.05, steps: int = 5) -> Dict[str, Union[float, str]]:
         self.classifier.apply(query, self.substrate)
         self.substrate.step(dt=dt, steps=steps)
         best = self.library.best_match(self.substrate.phases)

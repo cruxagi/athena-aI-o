@@ -35,7 +35,11 @@ class BehaviorLibraryTest(unittest.TestCase):
         library.add_behavior("aligned", aligned)
         library.add_behavior("shifted", shifted)
 
-        chosen, score = library.best_match([0.02 for _ in range(64)])  # type: ignore
+        result = library.best_match([0.02 for _ in range(64)])
+        self.assertIsNotNone(result)
+        if result is None:
+            return
+        chosen, score = result
         self.assertEqual(chosen, "aligned")
         self.assertGreater(score, 0.5)
 
