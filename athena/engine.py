@@ -3,7 +3,7 @@ from typing import Any, Dict, Mapping
 
 from .compression import CompressionReport, CompressionSystem
 from .organism import OrganismController, OrganismReport
-from .phases import PhaseState, phase_from_coherence
+from .phases import phase_from_coherence
 from .resonance import ResonanceController
 
 
@@ -48,9 +48,6 @@ class AIOEngine:
         self.organism = OrganismController()
         self.resonance = ResonanceController()
         self.compression = CompressionSystem()
-
-    def _phase_from_coherence(self, coherence: float) -> PhaseState:
-        return phase_from_coherence(coherence)
 
     def run_cycle(self, stimuli: Mapping[str, Any], resonance_program: str = "", feedback: float = 0.5) -> EngineReport:
         organism_report = self.organism.sense_decide_act_learn_report(stimuli, feedback=feedback)

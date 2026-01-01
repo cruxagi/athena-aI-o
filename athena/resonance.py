@@ -21,8 +21,12 @@ class SafeEvaluator(ast.NodeVisitor):
         if isinstance(node.op, ast.Mult):
             return left * right
         if isinstance(node.op, ast.Div):
+            if right == 0:
+                raise ValueError("Division by zero")
             return left / right
         if isinstance(node.op, ast.Mod):
+            if right == 0:
+                raise ValueError("Division by zero")
             return left % right
         raise ValueError("Unsupported binary operator")
 
