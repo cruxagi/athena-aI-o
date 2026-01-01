@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Dict
 
+from .phases import phase_from_coherence
+
 
 @dataclass
 class CompressionReport:
@@ -47,13 +49,7 @@ class CompressionSystem:
         return self._ratio(len(residues), modulus)
 
     def hubbard_phase(self, coherence: float) -> str:
-        if coherence < 0.3:
-            return "Chaotic"
-        if coherence < 0.6:
-            return "Critical"
-        if coherence < 0.85:
-            return "Crystalline"
-        return "Metallic"
+        return phase_from_coherence(coherence).value
 
     def project(self, payload: str, coherence: float) -> CompressionReport:
         delta_ratio = self.delta_compress(payload)

@@ -4,7 +4,7 @@ from .engine import AIOEngine, OffsetStore
 from .organism import OrganismController, OrganismReport
 from .resonance import ResonanceController
 from .compression import CompressionSystem, CompressionReport
-from .phases import PhaseState
+from .phases import PhaseState, phase_from_coherence
 
 __all__ = [
     "AIOEngine",
@@ -15,4 +15,5 @@ __all__ = [
     "ResonanceController",
     "CompressionSystem",
     "CompressionReport",
+    "phase_from_coherence",
 ]

@@ -3,7 +3,7 @@ from typing import Any, Dict, Mapping
 
 from .compression import CompressionReport, CompressionSystem
 from .organism import OrganismController, OrganismReport
-from .phases import PhaseState
+from .phases import PhaseState, phase_from_coherence
 from .resonance import ResonanceController
 
 
@@ -50,13 +50,7 @@ class AIOEngine:
         self.compression = CompressionSystem()
 
     def _phase_from_coherence(self, coherence: float) -> PhaseState:
-        if coherence < 0.3:
-            return PhaseState.CHAOTIC
-        if coherence < 0.6:
-            return PhaseState.CRITICAL
-        if coherence < 0.85:
-            return PhaseState.CRYSTALLINE
-        return PhaseState.METALLIC
+        return phase_from_coherence(coherence)
 
     def run_cycle(self, stimuli: Mapping[str, Any], resonance_program: str = "", feedback: float = 0.5) -> EngineReport:
         organism_report = self.organism.sense_decide_act_learn_report(stimuli, feedback=feedback)

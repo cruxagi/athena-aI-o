@@ -4,7 +4,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, Tuple
 
-from .phases import PhaseState
+from .phases import PhaseState, phase_from_coherence
 
 OSCILLATOR_COUNT = 64
 
@@ -40,10 +40,11 @@ class OrganismController:
 
     def _init_oscillators(self) -> List[Oscillator]:
         rng = self._rng
+        step = 1.0 / OSCILLATOR_COUNT
         return [
             Oscillator(
                 phase=rng.random() * 2 * math.pi,
-                natural_frequency=0.8 + (i / OSCILLATOR_COUNT),
+                natural_frequency=0.8 + (i * step),
                 mass=1.0 + (i % 4) * 0.1,
             )
             for i in range(OSCILLATOR_COUNT)
@@ -71,14 +72,7 @@ class OrganismController:
         )
 
     def phase_state(self) -> PhaseState:
-        r = self.coherence()
-        if r < 0.3:
-            return PhaseState.CHAOTIC
-        if r < 0.6:
-            return PhaseState.CRITICAL
-        if r < 0.85:
-            return PhaseState.CRYSTALLINE
-        return PhaseState.METALLIC
+        return phase_from_coherence(self.coherence())
 
     def mutate(self, intensity: float = 0.05) -> None:
         """Simple mutation operator for the oscillator DNA."""

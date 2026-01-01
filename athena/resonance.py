@@ -2,16 +2,88 @@ import ast
 from typing import Any, Dict, List, Tuple
 
 
+class SafeEvaluator(ast.NodeVisitor):
+    def __init__(self, scope: Dict[str, Any]) -> None:
+        self.scope = scope
+        self.funcs = {"min": min, "max": max, "abs": abs}
+
+    def eval(self, expr: str) -> Any:
+        tree = ast.parse(expr, mode="eval")
+        return self.visit(tree.body)
+
+    def visit_BinOp(self, node: ast.BinOp) -> Any:
+        left = self.visit(node.left)
+        right = self.visit(node.right)
+        if isinstance(node.op, ast.Add):
+            return left + right
+        if isinstance(node.op, ast.Sub):
+            return left - right
+        if isinstance(node.op, ast.Mult):
+            return left * right
+        if isinstance(node.op, ast.Div):
+            return left / right
+        if isinstance(node.op, ast.Mod):
+            return left % right
+        raise ValueError("Unsupported binary operator")
+
+    def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
+        operand = self.visit(node.operand)
+        if isinstance(node.op, ast.UAdd):
+            return +operand
+        if isinstance(node.op, ast.USub):
+            return -operand
+        raise ValueError("Unsupported unary operator")
+
+    def visit_Constant(self, node: ast.Constant) -> Any:
+        if isinstance(node.value, (int, float)):
+            return node.value
+        raise ValueError("Unsupported literal")
+
+    def visit_Name(self, node: ast.Name) -> Any:
+        if node.id in self.scope:
+            return self.scope[node.id]
+        raise ValueError(f"Unknown name {node.id}")
+
+    def visit_Call(self, node: ast.Call) -> Any:
+        if not isinstance(node.func, ast.Name) or node.func.id not in self.funcs:
+            raise ValueError("Unsafe call")
+        args = [self.visit(arg) for arg in node.args]
+        return self.funcs[node.func.id](*args)
+
+    def visit_Compare(self, node: ast.Compare) -> Any:
+        if len(node.ops) != 1 or len(node.comparators) != 1:
+            raise ValueError("Unsupported comparison")
+        left = self.visit(node.left)
+        right = self.visit(node.comparators[0])
+        op = node.ops[0]
+        if isinstance(op, ast.Lt):
+            return left < right
+        if isinstance(op, ast.Gt):
+            return left > right
+        if isinstance(op, ast.LtE):
+            return left <= right
+        if isinstance(op, ast.GtE):
+            return left >= right
+        if isinstance(op, ast.Eq):
+            return left == right
+        if isinstance(op, ast.NotEq):
+            return left != right
+        raise ValueError("Unsupported comparison operator")
+
+    def visit_BoolOp(self, node: ast.BoolOp) -> Any:
+        values = [self.visit(v) for v in node.values]
+        if isinstance(node.op, ast.And):
+            return all(values)
+        if isinstance(node.op, ast.Or):
+            return any(values)
+        raise ValueError("Unsupported boolean operator")
+
+    def generic_visit(self, node: ast.AST) -> Any:
+        raise ValueError("Unsupported expression")
+
+
 def _safe_eval(expr: str, scope: Dict[str, Any]) -> Any:
-    tree = ast.parse(expr, mode="eval")
-    allowed_calls = {"min", "max", "abs"}
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Attribute, ast.Subscript, ast.Import, ast.ImportFrom, ast.Lambda)):
-            raise ValueError("Unsafe expression in DSL")
-        if isinstance(node, ast.Call):
-            if not isinstance(node.func, ast.Name) or node.func.id not in allowed_calls:
-                raise ValueError("Unsafe expression in DSL")
-    return eval(compile(tree, "<dsl>", "eval"), {"__builtins__": {}, "min": min, "max": max, "abs": abs}, scope)
+    return SafeEvaluator(scope).eval(expr)
 
 
 class ResonanceController:
