@@ -50,7 +50,13 @@ class AIOEngine:
         self.compression = CompressionSystem()
 
     def _phase_from_coherence(self, coherence: float) -> PhaseState:
-        return self.organism.phase_state()
+        if coherence < 0.3:
+            return PhaseState.CHAOTIC
+        if coherence < 0.6:
+            return PhaseState.CRITICAL
+        if coherence < 0.85:
+            return PhaseState.CRYSTALLINE
+        return PhaseState.METALLIC
 
     def run_cycle(self, stimuli: Mapping[str, Any], resonance_program: str = "", feedback: float = 0.5) -> EngineReport:
         organism_report = self.organism.sense_decide_act_learn_report(stimuli, feedback=feedback)

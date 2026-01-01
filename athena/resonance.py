@@ -78,7 +78,7 @@ class ResonanceController:
             return
         if "=" in stmt:
             name, expr = stmt.split("=", 1)
-            scope[name.strip()] = _safe_eval(expr.strip(), scope)
+            scope[name.strip()] = float(_safe_eval(expr.strip(), scope))
 
     def run(self, program: str, scope: Dict[str, Any]) -> Dict[str, Any]:
         if not program.strip():

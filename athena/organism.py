@@ -35,10 +35,11 @@ class OrganismController:
         self.coupling = coupling
         self.token_budget = token_budget
         self.meta_goals = ["stability", "coherence", "safety"]
+        self._rng = random.Random(42)
         self.oscillators = self._init_oscillators()
 
     def _init_oscillators(self) -> List[Oscillator]:
-        rng = random.Random(42)
+        rng = self._rng
         return [
             Oscillator(
                 phase=rng.random() * 2 * math.pi,
@@ -81,7 +82,7 @@ class OrganismController:
 
     def mutate(self, intensity: float = 0.05) -> None:
         """Simple mutation operator for the oscillator DNA."""
-        rng = random.Random()
+        rng = self._rng
         for osc in self.oscillators:
             osc.natural_frequency += rng.uniform(-intensity, intensity)
             osc.mass = max(0.5, osc.mass + rng.uniform(-intensity, intensity))
