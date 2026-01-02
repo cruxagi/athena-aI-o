@@ -1,5 +1,5 @@
 # athena-aI-o
-Quantum-coherent search across local LLMs and the open web. Zero data leaks.
+Quantum-coherent search across local substrates. Zero data leaks.
 
 ## SBLM Engine (Small Behavior Language Model)
 Behavior emerges from phase synchronization rather than token prediction.
