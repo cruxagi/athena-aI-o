@@ -2,7 +2,7 @@ import cmath
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from .phases import PhaseState, phase_from_coherence
 
@@ -32,12 +32,16 @@ class OrganismController:
     """Implements the Sense→Decide→Act→Learn→Report loop for the organism."""
 
     def __init__(
-        self, coupling: float = 1.0, token_budget: int = 10_000, meta_goals: Optional[Iterable[str]] = None
+        self,
+        coupling: float = 1.0,
+        token_budget: int = 10_000,
+        meta_goals: Optional[Iterable[str]] = None,
+        seed: Optional[int] = 42,
     ) -> None:
         self.coupling = coupling
         self.token_budget = token_budget
         self.meta_goals = list(meta_goals) if meta_goals is not None else ["stability", "coherence", "safety"]
-        self._rng = random.Random(42)
+        self._rng = random.Random() if seed is None else random.Random(seed)
         self.oscillators = self._init_oscillators()
 
     def _init_oscillators(self) -> List[Oscillator]:
@@ -57,7 +61,7 @@ class OrganismController:
         n = len(self.oscillators)
         phases = [o.phase for o in self.oscillators]
         for idx, osc in enumerate(self.oscillators):
-            coupling_term = sum(math.sin(phases[j] - phases[idx]) for j in range(n)) / n
+            coupling_term = sum(math.sin(phases[j] - phases[idx]) for j in range(n))
             osc.phase += dt * (osc.natural_frequency + (self.coupling / n) * coupling_term)
 
     def coherence(self) -> float:
@@ -93,9 +97,14 @@ class OrganismController:
 
     def sense(self, stimuli: Mapping[str, Any]) -> Dict[str, Any]:
         """Ingest stimuli from sources like GitHub, Hacker News, and the codebase."""
-        normalized = {k: float(v) if isinstance(v, (int, float)) else 0.0 for k, v in stimuli.items()}
+        normalized: Dict[str, float] = {}
+        for k, v in stimuli.items():
+            if isinstance(v, (int, float)):
+                normalized[k] = float(v)
+            else:
+                raise ValueError(f"Stimulus {k!r} must be numeric, got {type(v).__name__}")
         intensity = sum(normalized.values())
-        # stimuli modulate coupling strength
+        # stimuli modulate coupling strength (clamped for stability of integration)
         self.coupling = max(0.1, min(2.0, self.coupling + 0.01 * intensity))
         return normalized
 

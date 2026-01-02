@@ -4,7 +4,6 @@ from typing import Any, Dict, Mapping
 
 from .compression import CompressionReport, CompressionSystem
 from .organism import OrganismController, OrganismReport
-from .phases import phase_from_coherence
 from .resonance import ResonanceController
 
 
@@ -58,7 +57,6 @@ class AIOEngine:
             "massBudget": budgets["batch"],
             "couplingBudget": budgets["ipq"],
             "r": organism_report.coherence,
-            "coherence": organism_report.coherence,
             "tok": budgets["tok"],
         }
         scope = self.resonance.run(resonance_program, scope)

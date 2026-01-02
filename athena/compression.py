@@ -28,23 +28,25 @@ class CompressionSystem:
         data = payload.encode()
         if not data:
             return 0.0
-        compressed = 0
+        # Approximate run-length encoding size: 1 byte for value + 4 bytes for count per run.
+        per_run_overhead = 5
+        runs = 1
         last = data[0]
-        count = 1
         for b in data[1:]:
-            if b == last:
-                count += 1
-            else:
-                compressed += 1 + len(str(count))
+            if b != last:
+                runs += 1
                 last = b
-                count = 1
-        compressed += 1 + len(str(count))
+        compressed = runs * per_run_overhead
         return self._ratio(compressed, len(data))
 
     def delta_compress(self, payload: str) -> float:
-        delta = sum(1 for a, b in zip(payload, self.last_payload) if a != b) + abs(
-            len(payload) - len(self.last_payload)
-        )
+        if self.last_payload == "":
+            # First observation: treat entire payload as delta to preserve baseline behavior.
+            delta = len(payload)
+        else:
+            delta = sum(1 for a, b in zip(payload, self.last_payload) if a != b) + abs(
+                len(payload) - len(self.last_payload)
+            )
         return self._ratio(delta, max(len(payload), 1))
 
     def semantic_compress(self, payload: str) -> float:
@@ -53,7 +55,9 @@ class CompressionSystem:
         return self._ratio(unique, max(len(tokens), 1))
 
     def tensor_projection(self, payload: str) -> float:
-        # Placeholder tensor metric; higher when payload is short and regular.
+        # Heuristic "tensor-like" projection metric used as one axis in the unified_7d_metric.
+        # Maps characters to modulo-7 residues, sums them, normalizes by length*7, then clamps via _ratio.
+        # Higher values loosely indicate more regular residue patterns; purely heuristic, not real tensor algebra.
         return self._ratio(sum(ord(c) % 7 for c in payload), max(len(payload), 1) * 7)
 
     def quantum_hint(self, payload: str) -> float:
@@ -70,6 +74,7 @@ class CompressionSystem:
         semantic_ratio = self.semantic_compress(payload)
         tensor_projection = self.tensor_projection(payload)
         quantum_hint = self.quantum_hint(payload)
+        # Equal-weight heuristic; semantic_ratio appears twice to emphasize lexical compaction vs dispersion.
         unified = sum(
             [
                 delta_ratio,

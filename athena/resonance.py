@@ -1,5 +1,6 @@
 import ast
 from typing import Any, Dict, List, Tuple
+import string
 
 
 class SafeEvaluator(ast.NodeVisitor):
@@ -114,6 +115,31 @@ class ResonanceController:
     def __init__(self) -> None:
         self.functions: Dict[str, List[Any]] = {}
 
+    def _tokenize(self, program: str) -> List[str]:
+        tokens: List[str] = []
+        current = []
+        for ch in program:
+            if ch in "{}":
+                if current:
+                    tokens.append("".join(current))
+                    current = []
+                tokens.append(ch)
+            elif ch == "\n":
+                if current:
+                    tokens.append("".join(current))
+                    current = []
+            else:
+                current.append(ch)
+        if current:
+            tokens.append("".join(current))
+        return [tok for tok in tokens if tok.strip()]
+
+    def _validate_name(self, name: str) -> str:
+        name = name.strip()
+        if not name or not name.replace("_", "").isalnum() or name[0] not in (string.ascii_letters + "_"):
+            raise ValueError(f"Invalid function name: {name!r}")
+        return name
+
     def _parse_block(self, lines: List[str], start: int = 0) -> Tuple[List[Any], int]:
         block: List[Any] = []
         i = start
@@ -124,17 +150,26 @@ class ResonanceController:
                 continue
             if raw.startswith("}"):
                 return block, i + 1
+            if raw == "{":
+                i += 1
+                continue
             if raw.startswith("fn "):
-                name = raw[3:].split("{")[0].strip()
+                rest = raw[3:].strip()
+                brace_idx = rest.find("{")
+                name = self._validate_name(rest[: brace_idx if brace_idx != -1 else None].strip())
                 body, i = self._parse_block(lines, i + 1)
                 self.functions[name] = body
                 continue
             if raw.startswith("if "):
-                condition = raw[3:].split("{")[0].strip()
+                rest = raw[3:].strip()
+                brace_idx = rest.find("{")
+                condition = rest[: brace_idx if brace_idx != -1 else None].strip()
                 true_body, i = self._parse_block(lines, i + 1)
                 false_body: List[Any] = []
-                if i < len(lines) and lines[i].strip().startswith("else"):
-                    false_body, i = self._parse_block(lines, i + 1)
+                if i < len(lines):
+                    next_raw = lines[i].strip()
+                    if next_raw in ("else", "else{") or next_raw.startswith("else {"):
+                        false_body, i = self._parse_block(lines, i + 1)
                 block.append(("if", condition, true_body, false_body))
                 continue
             block.append(("stmt", raw))
@@ -160,24 +195,29 @@ class ResonanceController:
 
     def _apply_assignment(self, stmt: str, scope: Dict[str, Any]) -> None:
         stmt = stmt.strip()
+        eq_count = stmt.count("=")
         if "+=" in stmt:
+            if eq_count != 1:
+                raise ValueError(f"Invalid assignment syntax: {stmt!r}")
             name, expr = stmt.split("+=", 1)
             name = name.strip()
             scope[name] = scope.get(name, 0.0) + _safe_number(expr.strip(), scope)
             return
         if "-=" in stmt:
+            if eq_count != 1:
+                raise ValueError(f"Invalid assignment syntax: {stmt!r}")
             name, expr = stmt.split("-=", 1)
             name = name.strip()
             scope[name] = scope.get(name, 0.0) - _safe_number(expr.strip(), scope)
             return
-        if "=" in stmt:
+        if "=" in stmt and "+=" not in stmt and "-=" not in stmt and eq_count == 1:
             name, expr = stmt.split("=", 1)
             scope[name.strip()] = _safe_number(expr.strip(), scope)
 
     def run(self, program: str, scope: Dict[str, Any]) -> Dict[str, Any]:
         if not program.strip():
             return scope
-        lines = [line for line in program.replace("{", "{\n").replace("}", "}\n").splitlines() if line.strip()]
+        lines = self._tokenize(program)
         block, _ = self._parse_block(lines)
         self._exec_block(block, scope)
         return scope
